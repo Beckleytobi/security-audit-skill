@@ -4,6 +4,8 @@ A coding-agent skill that turns your agent into a security auditor. It orchestra
 
 This repository is a fork of [Cloudflare's security-audit-skill](https://github.com/cloudflare/security-audit-skill), the single-repository starting point for the harness described in [Build your own vulnerability harness](https://blog.cloudflare.com/build-your-own-vulnerability-harness). The audit method and validators are maintained upstream. This fork currently adds clearer usage and platform guidance and automated checks; it does not claim a different detection method.
 
+This fork also ships a second skill, [`security-review`](skills/security-review), a lighter adaptation of the same method for the Builders engineering family. It keeps the upstream verification spine (three verdicts, adversarial independence, severity-requires-impact, the hardened validators) and adds plain-language consequence framing, risk tiers, and explicit handoffs to sibling skills so a review can feed a release gate. Use `security-audit` for the full multi-agent harness and `security-review` when you want a review that speaks the Builders family's language. See its [NOTICE](skills/security-review/NOTICE.md) for attribution.
+
 ## What it does
 
 The skill runs a structured audit in six phases:
