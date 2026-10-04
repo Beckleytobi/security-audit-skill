@@ -99,7 +99,14 @@ function errorsFor(value) {
 }
 
 function runCli(contents, options = {}) {
-  const { nodeArgs = [], timeout = CLI_TIMEOUT_MS } = options;
+  const { nodeArgs = [], timeout = CLI_TIMEOUT_MS, stdin = !HAS_SAFE_INPUT_OPEN } = options;
+  if (stdin) {
+    return spawnSync(process.execPath, [...nodeArgs, validatorPath, "-"], {
+      input: contents,
+      encoding: "utf8",
+      timeout,
+    });
+  }
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "validate-findings-"));
   const findingsPath = path.join(directory, "findings.json");
   try {
@@ -161,16 +168,23 @@ test("schema is an actual top-level array with exactly three branches", () => {
   assert.equal(confirmedSchema.remediation.properties.code_changes.items.properties.fixed_code.minLength, undefined);
 });
 
-test("accepts a producer-shaped findings document through the CLI", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("accepts a producer-shaped findings document through the CLI", () => {
   const result = runCli(JSON.stringify(producerShapedFindings()));
   assert.equal(result.status, 0, cliOutput(result));
   assert.match(result.stdout, /PASS: 3 findings valid/);
 });
 
-test("CLI fails closed when safe input opening is unavailable", { skip: HAS_SAFE_INPUT_OPEN }, () => {
-  const result = runCli(JSON.stringify(producerShapedFindings()));
+test("accepts bounded JSON from standard input", () => {
+  const result = runCli(JSON.stringify(producerShapedFindings()), { stdin: true });
+  assert.equal(result.status, 0, cliOutput(result));
+  assert.match(result.stdout, /PASS: 3 findings valid/);
+});
+
+test("file input is accepted only when safe opening is available", () => {
+  const result = spawnSync(process.execPath, [validatorPath, __filename], { encoding: "utf8", timeout: CLI_TIMEOUT_MS });
   assert.notEqual(result.status, 0);
-  assert.match(cliOutput(result), /OS no-follow and nonblocking input protection is unavailable/);
+  if (!HAS_SAFE_INPUT_OPEN) assert.match(cliOutput(result), /OS no-follow and nonblocking input protection is unavailable/);
+  else assert.match(cliOutput(result), /invalid JSON syntax/);
 });
 
 test("accepts empty output and each complete branch", () => {
@@ -378,7 +392,7 @@ test("accepts legitimate Unicode source paths and prose", () => {
   assert.deepEqual(errorsFor([finding]), []);
 });
 
-test("CLI rejects input above the byte limit without an exception trace", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("CLI rejects input above the byte limit without an exception trace", () => {
   const result = runCli(Buffer.alloc(LIMITS.inputBytes + 1, 0x20));
   const output = cliOutput(result);
   assert.equal(result.status, 1, output);
@@ -386,7 +400,7 @@ test("CLI rejects input above the byte limit without an exception trace", { skip
   assert.doesNotMatch(output, /RangeError|Maximum call stack|heap out of memory/i);
 });
 
-test("CLI rejects invalid UTF-8 without replacement or an exception trace", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("CLI rejects invalid UTF-8 without replacement or an exception trace", () => {
   const findings = producerShapedFindings();
   findings[0].execution.payloads = ["INVALID_UTF8"];
   const encoded = Buffer.from(JSON.stringify(findings));
@@ -406,7 +420,7 @@ test("CLI rejects invalid UTF-8 without replacement or an exception trace", { sk
   assert.doesNotMatch(output, /TypeError|stack|at validate-findings/i);
 });
 
-test("quotes input-derived controls in CLI validation errors", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("quotes input-derived controls in CLI validation errors", () => {
   const finding = confirmed();
   finding.trace[0].kind = `invalid-${TERMINAL_CONTROL_PAYLOAD}`;
   finding.execution[`extra-${TERMINAL_CONTROL_PAYLOAD}`] = "value";
@@ -419,7 +433,7 @@ test("quotes input-derived controls in CLI validation errors", { skip: !HAS_SAFE
   assertNoInjectedControlBytes(result.stderr);
 });
 
-test("returns a generic syntax error without parser-supplied controls", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("returns a generic syntax error without parser-supplied controls", () => {
   const malformed = Buffer.concat([
     Buffer.from("["),
     Buffer.from(TERMINAL_CONTROL_PAYLOAD),
@@ -448,7 +462,7 @@ test("does not reflect controls from a failed CLI input path", () => {
   }
 });
 
-test("CLI rejects lone-surrogate prose without changing payload semantics", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("CLI rejects lone-surrogate prose without changing payload semantics", () => {
   const findings = producerShapedFindings();
   findings[0].title = "\ud800";
   const result = runCli(JSON.stringify(findings));
@@ -458,7 +472,7 @@ test("CLI rejects lone-surrogate prose without changing payload semantics", { sk
   assert.doesNotMatch(output, /stack|at validate-findings/i);
 });
 
-test("CLI rejects Unicode format controls in source paths", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("CLI rejects Unicode format controls in source paths", () => {
   const findings = producerShapedFindings();
   findings[0].trace[0].file = "src/file\u202ename.c";
   const result = runCli(JSON.stringify(findings));
@@ -510,7 +524,7 @@ test("CLI rejects a symlink without following it", { skip: process.platform === 
   }
 });
 
-test("CLI rejects input above the nesting-depth limit without an exception trace", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("CLI rejects input above the nesting-depth limit without an exception trace", () => {
   const levels = LIMITS.nestingDepth + 1;
   const result = runCli(`${"[".repeat(levels)}0${"]".repeat(levels)}`);
   const output = cliOutput(result);
@@ -519,7 +533,7 @@ test("CLI rejects input above the nesting-depth limit without an exception trace
   assert.doesNotMatch(output, /RangeError|Maximum call stack|heap out of memory/i);
 });
 
-test("CLI rejects an oversized array without an exception trace", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("CLI rejects an oversized array without an exception trace", () => {
   const result = runCli(JSON.stringify(Array(LIMITS.arrayItems + 1).fill(null)));
   const output = cliOutput(result);
   assert.equal(result.status, 1, output);
@@ -555,7 +569,7 @@ test("caps malformed 1000-finding validation output", () => {
   assert.doesNotMatch(output, /RangeError|Maximum call stack|stack|at validate-findings/i);
 });
 
-test("caps amplified in-limit findings output under a constrained Node heap", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("caps amplified in-limit findings output under a constrained Node heap", () => {
   const findings = Array.from({ length: 750 }, () => ({
     verdict: "confirmed",
     trace: Array.from({ length: LIMITS.arrayItems }, () => 0),

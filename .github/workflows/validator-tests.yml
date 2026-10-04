@@ -16,5 +16,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Run validator tests
         run: node --test skills/security-audit/validate-findings.test.cjs skills/security-audit/validate-coverage-ledger.test.cjs
+      - name: Check evaluation fixtures and helper syntax
+        run: |
+          python -m py_compile skills/security-audit/scripts/run-local-check.py evaluation/score.py
+          node --check evaluation/fixtures/tenant-write-vulnerable/index.js
+          node --check evaluation/fixtures/tenant-write-protected/index.js
+          node --check evaluation/fixtures/path-read-vulnerable/index.js
+          node --check evaluation/fixtures/path-read-protected/index.js

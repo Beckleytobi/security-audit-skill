@@ -99,17 +99,29 @@ For example: `Audit the authentication subsystem with the quick profile and repo
 - A coding agent with a model that supports tool use and parallel sub-agents
 - Node.js for the zero-dependency findings and coverage-ledger validators
 - An OS-enforced sandbox for target-controlled builds, tests, processes, browsers, emulators, fuzzers, and fixtures. It must disable external networking, use a sanitized allowlisted environment, enforce resource limits, and allow writes only to assigned scratch paths. Without these controls, the workflow keeps the lead as `needs_validation` instead of executing target code.
-- The bundled validator CLIs require Node.js to expose nonzero `O_NOFOLLOW` and `O_NONBLOCK` file-opening flags. On platforms without them, including Windows with the currently bundled Node.js validator implementation, they deliberately fail closed. Use a supported host for a complete audit; a Windows host can still use guidance mode and the validators' in-process checks, but cannot claim a completed full run. Running Node in a Linux container does not by itself satisfy the separate target-code sandbox requirements.
+- File-path input to the validator CLIs requires Node.js to expose nonzero `O_NOFOLLOW` and `O_NONBLOCK` file-opening flags. On platforms without them, including Windows with the currently bundled Node.js implementation, file-path input deliberately fails closed. Both validators also accept `-` to read bounded, strict UTF-8 JSON from standard input on every platform. The trusted parent must send the exact JSON bytes it owns directly to the validator process; do not pipe an arbitrary target-controlled file through a shell command and treat that as safe file validation. The parent must retain sole write access to saved shared records and validate the bytes it saves. This enables full-audit record validation on Windows, subject to the separate target-code sandbox requirements.
 
 ## Checks
 
-The repository tests both validators on Linux and Windows in CI. On platforms without safe input-opening flags, CLI acceptance tests are skipped and explicit tests check that the CLIs fail closed. Locally, run:
+The repository tests both validators on Linux and Windows in CI. On platforms without safe file-opening flags, content-validation tests use standard input and file-path input is checked for fail-closed behavior. FIFO and symlink file-path cases run only where safe file opening is available. Locally, run:
 
 ```bash
 node --test skills/security-audit/validate-findings.test.cjs skills/security-audit/validate-coverage-ledger.test.cjs
 ```
 
-These tests check validator behavior; they do not measure vulnerability detection quality. A comparative evaluation against known vulnerable and clean repositories remains future work.
+These tests check validator behavior; they do not measure vulnerability detection quality. Comparative audit runs against known vulnerable and clean repositories remain future work.
+
+## Local checks and evaluation
+
+For a bounded local check, `skills/security-audit/scripts/run-local-check.py` provides a Linux-container runner. It requires a running local Docker engine with seccomp enabled and a toolchain image that is already present. It mounts the target read-only, uses an offline container with a read-only root, drops capabilities, clears the command's environment, limits CPU, memory, process count, individual file size, scratch storage, output, and wall time. It accepts an absolute executable path inside the image:
+
+```text
+python skills/security-audit/scripts/run-local-check.py --target <source-directory> --image <local-image> -- /absolute/path/to/tool <arguments>
+```
+
+The runner keeps scratch data ephemeral and returns a bounded JSON observation. It does not promote scratch files into audit artifacts. The trusted parent must retain only the minimum non-secret result under its own artifact rules; if a check requires a scratch file and safe promotion is unavailable, keep that lead as `needs_validation`. The runner has been smoke-tested against a local Docker Desktop Linux engine for read-only target access, scratch writes, environment clearing, resource limits, timeout, and output capping. Your host and chosen image still need their own preflight.
+
+The [evaluation starter](evaluation/README.md) supplies paired vulnerable and protected fixtures, an adjudication protocol, and a scorer. It is a smoke test; no effectiveness score is claimed until actual audit runs are recorded.
 
 ## Design principles
 

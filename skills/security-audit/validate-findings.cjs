@@ -602,28 +602,29 @@ function loadSchema(schemaPath) {
 }
 
 function readFileWithinLimit(file) {
+  const fromStdin = file === "-";
   const noFollow = fs.constants.O_NOFOLLOW;
   const nonBlock = fs.constants.O_NONBLOCK;
-  if (!Number.isInteger(noFollow) || noFollow === 0 || !Number.isInteger(nonBlock) || nonBlock === 0) {
+  if (!fromStdin && (!Number.isInteger(noFollow) || noFollow === 0 || !Number.isInteger(nonBlock) || nonBlock === 0)) {
     throw new SafeInputError("OS no-follow and nonblocking input protection is unavailable");
   }
 
-  let descriptor;
-  try {
-    descriptor = fs.openSync(file, fs.constants.O_RDONLY | noFollow | nonBlock);
-  } catch (error) {
-    if (error && (error.code === "ELOOP" || error.code === "EMLINK")) {
-      throw new SafeInputError("input must not be a symlink");
+  let descriptor = 0;
+  if (!fromStdin) {
+    try {
+      descriptor = fs.openSync(file, fs.constants.O_RDONLY | noFollow | nonBlock);
+    } catch (error) {
+      if (error && (error.code === "ELOOP" || error.code === "EMLINK")) {
+        throw new SafeInputError("input must not be a symlink");
+      }
+      throw error;
     }
-    throw error;
   }
   try {
-    const stat = fs.fstatSync(descriptor);
-    if (!stat.isFile()) {
-      throw new SafeInputError("input must be a regular file");
-    }
-    if (stat.size > LIMITS.inputBytes) {
-      throw new SafeInputError(`input exceeds ${LIMITS.inputBytes} byte limit`);
+    if (!fromStdin) {
+      const stat = fs.fstatSync(descriptor);
+      if (!stat.isFile()) throw new SafeInputError("input must be a regular file");
+      if (stat.size > LIMITS.inputBytes) throw new SafeInputError(`input exceeds ${LIMITS.inputBytes} byte limit`);
     }
 
     const chunks = [];
@@ -644,7 +645,7 @@ function readFileWithinLimit(file) {
       throw new SafeInputError("input is not valid UTF-8");
     }
   } finally {
-    fs.closeSync(descriptor);
+    if (!fromStdin) fs.closeSync(descriptor);
   }
 }
 
@@ -702,7 +703,7 @@ function enforceJsonTextLimits(contents) {
 
 function run(file) {
   if (!file) {
-    console.error("Usage: node validate-findings.cjs <path-to-findings.json>");
+    console.error("Usage: node validate-findings.cjs <path-to-findings.json|->");
     return 1;
   }
 

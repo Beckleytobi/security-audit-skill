@@ -41,11 +41,13 @@ The agent, outside the target-controlled process, may make a disposable source c
 
 Use dummy principals, fixtures, and secrets. Do not probe deployed endpoints, external services, shared infrastructure, production identities, other users' data, or live control planes. Do not test availability against a live or shared process, publish artifacts, alter releases, spend paid API quota, or continue beyond the minimum local effect needed to establish a defect. If the decisive fact is outside source or the sandboxed fixture, report it as needing validation.
 
+For a single local check on a host with a running Linux Docker engine, `scripts/run-local-check.py` supplies a bounded offline container profile and emits a capped JSON observation. Use an already-local toolchain image. The helper keeps scratch ephemeral and does not promote files; a check that needs retained scratch output still requires the parent-side promotion procedure below. Do not treat the presence of Docker or the helper alone as proof that all sandbox controls are available.
+
 ## Full audit setup
 
 In full audit mode, resolve these values before reconnaissance:
 
-Check that this host can run both bundled validator CLIs. They require nonzero `O_NOFOLLOW` and `O_NONBLOCK` file-opening flags and fail closed where those controls are unavailable, including the current Windows Node.js implementation. If either CLI cannot safely open a regular input file, do not launch a full audit on this host or claim its report is complete; use a supported host or provide guidance-mode analysis. Validator availability does not replace the separate sandbox checks for target-controlled execution.
+Check that this host can run both bundled validator CLIs. File-path input requires nonzero `O_NOFOLLOW` and `O_NONBLOCK` file-opening flags and fails closed without them, including on current Windows Node.js. Both CLIs also accept `-` for bounded, strict UTF-8 input on standard input. Where safe file opening is unavailable, the trusted parent must send the exact JSON bytes it owns directly to each validator process, retain sole write access to saved shared records, and validate the bytes it saves. Never use an arbitrary target-controlled file or a shell text pipeline as a substitute for safe file opening. Validator availability does not replace the separate sandbox checks for target-controlled execution.
 
 - **Skill directory**: the absolute directory containing this `SKILL.md`.
 - **Target**: the absolute repository root under review.

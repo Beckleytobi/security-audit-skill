@@ -115,6 +115,8 @@ node <skill-dir>/validate-findings.cjs <output-dir>/findings.json
 node <skill-dir>/validate-coverage-ledger.cjs <output-dir>/coverage-ledger.json
 ```
 
+Where safe file opening is unavailable, invoke each validator with `-` and send its exact parent-owned serialized JSON bytes through standard input. Do not read an arbitrary target-controlled path into that stream. Keep saved records under the parent's sole write control, as required in `SKILL.md`.
+
 Fix every structural and semantic error before continuing. The findings validator rejects input beyond 5 MiB, 1,000 top-level findings, or 64 nesting levels, and caps reported error output at 100 messages. Validator success proves format and ledger consistency only.
 
 ### Phase 5: Verify the final records with fresh eyes
