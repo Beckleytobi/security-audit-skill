@@ -89,20 +89,26 @@ def main():
     name = f"security-audit-check-{uuid.uuid4().hex}"
     volume = f"security-audit-scratch-{uuid.uuid4().hex}" if args.artifact else None
     keeper = f"security-audit-keeper-{uuid.uuid4().hex}" if args.artifact else None
+    promoter_name = f"security-audit-promoter-{uuid.uuid4().hex}" if args.artifact else None
     if volume:
         artifact_dir.mkdir(mode=0o700)
         created = docker("volume", "create", "--driver=local", "--opt=type=tmpfs",
                          "--opt=device=tmpfs", "--opt=o=size=64m,uid=65534,gid=65534,nosuid,nodev,noexec", volume)
         if created.returncode != 0 or created.stdout.strip().decode() != volume:
             raise RuntimeError("bounded scratch volume creation failed")
-        started = docker(
-            "run", "-d", "--name", keeper, "--pull=never", "--network=none",
-            "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges=true",
-            "--memory=128m", "--memory-swap=128m", "--pids-limit=8",
-            "--user=65534:65534", f"--mount=type=volume,src={volume},dst=/scratch,volume-nocopy",
-            "--entrypoint=/usr/bin/python3", args.image, "-c",
-            f"import time; time.sleep({args.timeout + 45})", timeout=15,
-        )
+        try:
+            started = docker(
+                "run", "-d", "--name", keeper, "--pull=never", "--network=none",
+                "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges=true",
+                "--memory=128m", "--memory-swap=128m", "--pids-limit=8",
+                "--user=65534:65534", f"--mount=type=volume,src={volume},dst=/scratch,volume-nocopy",
+                "--entrypoint=/usr/bin/python3", args.image, "-c",
+                f"import time; time.sleep({args.timeout + 45})", timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            docker("rm", "-f", keeper)
+            docker("volume", "rm", volume)
+            raise RuntimeError("scratch keeper could not start; image needs /usr/bin/python3")
         if started.returncode != 0:
             docker("rm", "-f", keeper)
             docker("volume", "rm", volume)
@@ -163,7 +169,7 @@ def main():
         if volume and not timed_out and not exceeded.is_set() and not cleanup_failed:
             promoter = Path(__file__).with_name("promote-artifact.py").resolve(strict=True)
             promoted = docker(
-                "run", "--rm", "--pull=never", "--network=none", "--ipc=none",
+                "run", "--rm", "--name", promoter_name, "--pull=never", "--network=none", "--ipc=none",
                 "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges=true",
                 "--memory=128m", "--memory-swap=128m", "--pids-limit=16",
                 f"--mount=type=volume,src={volume},dst=/scratch,readonly,volume-nocopy",
@@ -178,6 +184,7 @@ def main():
                 output.extend((b"\n[artifact promotion rejected: " + promoted.stderr[:1024] + b"]")[:remaining])
     finally:
         if volume:
+            docker("rm", "-f", promoter_name, timeout=10)
             keeper_removed = docker("rm", "-f", keeper, timeout=10)
             volume_removed = docker("volume", "rm", volume, timeout=10)
             cleanup_failed = cleanup_failed or keeper_removed.returncode != 0 or volume_removed.returncode != 0
