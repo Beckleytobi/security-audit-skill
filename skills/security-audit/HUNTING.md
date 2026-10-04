@@ -105,9 +105,11 @@ Reference only for you: the parent performs these steps; you never perform them.
 Before execution, the parent opens and retains trusted, non-inheritable directory
 descriptors for the agent's scratch/ and artifacts/ roots, and records an allowlist
 of expected scratch-relative artifact files plus explicit per-file and cumulative
-byte limits. Never pass those descriptors to the agent or sandbox. After the sandbox
-and all its processes terminate, trusted parent-side code promotes each allowlisted
-file separately:
+byte limits. Never pass those descriptors to the agent or sandbox. The Docker
+helper's bounded scratch volume is an equivalent handoff: a separate keeper holds
+the private mount, and the trusted promoter opens its directory descriptor only
+after the target container and all its processes terminate. After termination,
+trusted parent-side code promotes each allowlisted file separately:
 
 1. Validate the declared relative path: reject absolute, empty, `.`, `..`, or
    symlinked components.
