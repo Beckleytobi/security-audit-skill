@@ -36,6 +36,8 @@ def main():
         parser.error("provide an absolute executable path after --")
     if not 1 <= args.timeout <= MAX_SECONDS:
         parser.error("timeout must be between 1 and 120 seconds")
+    if not args.image or args.image.startswith("-"):
+        parser.error("image must be a locally available image reference")
     target = Path(args.target).resolve(strict=True)
     if not target.is_dir():
         parser.error("target must be an existing directory")
