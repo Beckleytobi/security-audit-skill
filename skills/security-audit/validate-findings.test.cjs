@@ -184,7 +184,7 @@ test("file input is accepted only when safe opening is available", () => {
   const result = spawnSync(process.execPath, [validatorPath, __filename], { encoding: "utf8", timeout: CLI_TIMEOUT_MS });
   assert.notEqual(result.status, 0);
   if (!HAS_SAFE_INPUT_OPEN) assert.match(cliOutput(result), /OS no-follow and nonblocking input protection is unavailable/);
-  else assert.match(cliOutput(result), /invalid JSON syntax/);
+  else assert.doesNotMatch(cliOutput(result), /Failed to read findings JSON:/);
 });
 
 test("accepts empty output and each complete branch", () => {

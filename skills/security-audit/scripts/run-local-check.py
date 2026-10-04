@@ -69,7 +69,7 @@ def main():
         "--network=none", "--ipc=none", "--read-only", "--cap-drop=ALL",
         "--security-opt=no-new-privileges=true", "--pids-limit=64",
         "--memory=512m", "--memory-swap=512m", "--cpus=1",
-        "--ulimit=fsize=1048576:1048576", "--user=65534:65534",
+        "--ulimit=fsize=16777216:16777216", "--user=65534:65534",
         f"--mount=type=bind,src={target},dst=/target,readonly",
         "--tmpfs=/scratch:rw,nosuid,nodev,noexec,size=64m,mode=1777",
         "--workdir=/target", "--entrypoint=/usr/bin/env", args.image,
