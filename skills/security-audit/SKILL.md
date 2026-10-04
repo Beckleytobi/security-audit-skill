@@ -41,9 +41,13 @@ The agent, outside the target-controlled process, may make a disposable source c
 
 Use dummy principals, fixtures, and secrets. Do not probe deployed endpoints, external services, shared infrastructure, production identities, other users' data, or live control planes. Do not test availability against a live or shared process, publish artifacts, alter releases, spend paid API quota, or continue beyond the minimum local effect needed to establish a defect. If the decisive fact is outside source or the sandboxed fixture, report it as needing validation.
 
+For a single local check on a host with a running Linux Docker engine, `scripts/run-local-check.py` supplies a bounded offline container profile and emits a capped JSON observation. Use an already-local toolchain image. Its optional `--artifact <filename> --artifact-dir <new-directory>` mode retains one declared file (at most 1 MiB) after the target stops: a separate trusted Linux container performs descriptor-based no-follow promotion from a bounded scratch volume into a new parent-owned directory outside the target. This mode requires `/usr/bin/python3` in the local image. Without those options scratch stays ephemeral. Treat promotion failure as `needs_validation` if the file is decisive. Do not treat the presence of Docker or the helper alone as proof that all sandbox controls are available.
+
 ## Full audit setup
 
 In full audit mode, resolve these values before reconnaissance:
+
+Check that this host can run both bundled validator CLIs. File-path input requires nonzero `O_NOFOLLOW` and `O_NONBLOCK` file-opening flags and fails closed without them, including on current Windows Node.js. Both CLIs also accept `-` for bounded, strict UTF-8 input on standard input. Where safe file opening is unavailable, the trusted parent must send the exact JSON bytes it owns directly to each validator process, retain sole write access to saved shared records, and validate the bytes it saves. Never use an arbitrary target-controlled file or a shell text pipeline as a substitute for safe file opening. Validator availability does not replace the separate sandbox checks for target-controlled execution.
 
 - **Skill directory**: the absolute directory containing this `SKILL.md`.
 - **Target**: the absolute repository root under review.
@@ -65,7 +69,7 @@ The parent creates and is the only writer of shared run files:
 
 Each hunter or verifier receives a unique root under `<output-dir>/agents/<agent-id>/`, with separate `scratch/` and `artifacts/` directories. Canonical agent IDs match `^[a-z0-9][a-z0-9_-]{0,63}$` and must not equal a Windows device name such as `con`, `prn`, `aux`, `nul`, `com1` through `com9`, or `lpt1` through `lpt9`. Lowercase IDs prevent case-fold collisions. The agent and every target-controlled process may write only to `scratch/`; retained `artifacts/` is parent-owned, is never exposed to the sandbox, and is writable only by trusted parent-side promotion code. Agents may not change shared files, target source, retained artifacts, or another agent's directory. Do not use `/tmp` or the host home directory as a writable fallback.
 
-Before execution, the parent opens and retains trusted, non-inheritable directory descriptors for the agent's `scratch/` and `artifacts/` roots, and records an allowlist of expected scratch-relative artifact files plus explicit per-file and cumulative byte limits. Never pass those descriptors to the agent or sandbox. After the sandbox and all its processes terminate, trusted parent-side code promotes each allowlisted file separately:
+Before execution, the parent opens and retains trusted, non-inheritable directory descriptors for the agent's `scratch/` and `artifacts/` roots, and records an allowlist of expected scratch-relative artifact files plus explicit per-file and cumulative byte limits. Never pass those descriptors to the agent or sandbox. The Docker helper's bounded scratch volume is an equivalent handoff: a separate keeper holds the private mount, and the trusted promoter opens its directory descriptor only after the target container and all its processes terminate. After termination, trusted parent-side code promotes each allowlisted file separately:
 
 1. Validate the declared relative path: reject absolute, empty, `.`, `..`, or symlinked components.
 2. Walk each parent component from the retained scratch-root descriptor with no-follow directory-relative operations; never reopen by path.

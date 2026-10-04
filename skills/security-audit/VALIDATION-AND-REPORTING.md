@@ -54,9 +54,11 @@ Reference only for you: the parent performs these steps; you never perform them.
 Before execution, the parent opens and retains trusted, non-inheritable directory
 descriptors for the agent's scratch/ and artifacts/ roots, and records an allowlist
 of expected scratch-relative artifact files plus explicit per-file and cumulative
-byte limits. Never pass those descriptors to the agent or sandbox. After the sandbox
-and all its processes terminate, trusted parent-side code promotes each allowlisted
-file separately:
+byte limits. Never pass those descriptors to the agent or sandbox. The Docker
+helper's bounded scratch volume is an equivalent handoff: a separate keeper holds
+the private mount, and the trusted promoter opens its directory descriptor only
+after the target container and all its processes terminate. After termination,
+trusted parent-side code promotes each allowlisted file separately:
 
 1. Validate the declared relative path: reject absolute, empty, `.`, `..`, or
    symlinked components.
@@ -114,6 +116,8 @@ Run:
 node <skill-dir>/validate-findings.cjs <output-dir>/findings.json
 node <skill-dir>/validate-coverage-ledger.cjs <output-dir>/coverage-ledger.json
 ```
+
+Where safe file opening is unavailable, invoke each validator with `-` and send its exact parent-owned serialized JSON bytes through standard input. Do not read an arbitrary target-controlled path into that stream. Keep saved records under the parent's sole write control, as required in `SKILL.md`.
 
 Fix every structural and semantic error before continuing. The findings validator rejects input beyond 5 MiB, 1,000 top-level findings, or 64 nesting levels, and caps reported error output at 100 messages. Validator success proves format and ledger consistency only.
 

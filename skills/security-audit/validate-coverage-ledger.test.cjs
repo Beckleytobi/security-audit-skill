@@ -58,7 +58,14 @@ function errorsFor(value) {
 }
 
 function runCli(contents, options = {}) {
-  const { nodeArgs = [], timeout = CLI_TIMEOUT_MS } = options;
+  const { nodeArgs = [], timeout = CLI_TIMEOUT_MS, stdin = !HAS_SAFE_INPUT_OPEN } = options;
+  if (stdin) {
+    return spawnSync(process.execPath, [...nodeArgs, validatorPath, "-"], {
+      input: contents,
+      encoding: "utf8",
+      timeout,
+    });
+  }
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "validate-coverage-ledger-"));
   const ledgerPath = path.join(directory, "coverage-ledger.json");
   try {
@@ -143,10 +150,23 @@ test("accepts an empty ledger and complete units", () => {
   assert.deepEqual(errorsFor([covered]), []);
 });
 
-test("accepts a complete ledger through the CLI", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("accepts a complete ledger through the CLI", () => {
   const result = runCli(JSON.stringify([unit()]));
   assert.equal(result.status, 0, cliOutput(result));
   assert.match(result.stdout, /PASS: 1 coverage units valid/);
+});
+
+test("accepts bounded JSON from standard input", () => {
+  const result = runCli(JSON.stringify([unit()]), { stdin: true });
+  assert.equal(result.status, 0, cliOutput(result));
+  assert.match(result.stdout, /PASS: 1 coverage units valid/);
+});
+
+test("file input is accepted only when safe opening is available", () => {
+  const result = spawnSync(process.execPath, [validatorPath, __filename], { encoding: "utf8", timeout: CLI_TIMEOUT_MS });
+  assert.notEqual(result.status, 0);
+  if (!HAS_SAFE_INPUT_OPEN) assert.match(cliOutput(result), /OS no-follow and nonblocking input protection is unavailable/);
+  else assert.doesNotMatch(cliOutput(result), /Failed to read coverage ledger:/);
 });
 
 test("text preflight ignores structural characters and escapes inside strings", () => {
@@ -563,7 +583,7 @@ test("quotes input-derived controls in direct validation errors", () => {
   assertNoInjectedControlBytes(output);
 });
 
-test("quotes input-derived controls in CLI validation errors", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("quotes input-derived controls in CLI validation errors", () => {
   const value = unit({
     status: `invalid-${TERMINAL_CONTROL_PAYLOAD}`,
     result_fingerprints: ["force-state-error"],
@@ -576,7 +596,7 @@ test("quotes input-derived controls in CLI validation errors", { skip: !HAS_SAFE
   assertNoInjectedControlBytes(result.stderr);
 });
 
-test("returns a generic syntax error without parser-supplied controls", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("returns a generic syntax error without parser-supplied controls", () => {
   const malformed = Buffer.concat([
     Buffer.from("["),
     Buffer.from(TERMINAL_CONTROL_PAYLOAD),
@@ -605,7 +625,7 @@ test("does not reflect controls from a failed CLI input path", () => {
   }
 });
 
-test("rejects invalid UTF-8 through the CLI", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("rejects invalid UTF-8 through the CLI", () => {
   const encoded = Buffer.from(JSON.stringify([unit()]));
   const marker = Buffer.from("Update-user route");
   const markerOffset = encoded.indexOf(marker);
@@ -679,7 +699,7 @@ test("rejects deeply nested input without recursion failure", () => {
   assert.doesNotMatch(output, /RangeError|Maximum call stack|stack|at validate-coverage-ledger/i);
 });
 
-test("rejects multi-megabyte nesting under a constrained Node heap", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("rejects multi-megabyte nesting under a constrained Node heap", () => {
   const openContainers = "[".repeat(2000000);
   const cases = [
     openContainers,

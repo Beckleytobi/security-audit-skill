@@ -99,7 +99,14 @@ function errorsFor(value) {
 }
 
 function runCli(contents, options = {}) {
-  const { nodeArgs = [], timeout = CLI_TIMEOUT_MS } = options;
+  const { nodeArgs = [], timeout = CLI_TIMEOUT_MS, stdin = !HAS_SAFE_INPUT_OPEN } = options;
+  if (stdin) {
+    return spawnSync(process.execPath, [...nodeArgs, validatorPath, "-"], {
+      input: contents,
+      encoding: "utf8",
+      timeout,
+    });
+  }
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "validate-findings-"));
   const findingsPath = path.join(directory, "findings.json");
   try {
@@ -165,6 +172,19 @@ test("accepts a producer-shaped findings document through the CLI", () => {
   const result = runCli(JSON.stringify(producerShapedFindings()));
   assert.equal(result.status, 0, cliOutput(result));
   assert.match(result.stdout, /PASS: 3 findings valid/);
+});
+
+test("accepts bounded JSON from standard input", () => {
+  const result = runCli(JSON.stringify(producerShapedFindings()), { stdin: true });
+  assert.equal(result.status, 0, cliOutput(result));
+  assert.match(result.stdout, /PASS: 3 findings valid/);
+});
+
+test("file input is accepted only when safe opening is available", () => {
+  const result = spawnSync(process.execPath, [validatorPath, __filename], { encoding: "utf8", timeout: CLI_TIMEOUT_MS });
+  assert.notEqual(result.status, 0);
+  if (!HAS_SAFE_INPUT_OPEN) assert.match(cliOutput(result), /OS no-follow and nonblocking input protection is unavailable/);
+  else assert.doesNotMatch(cliOutput(result), /Failed to read findings JSON:/);
 });
 
 test("accepts empty output and each complete branch", () => {
@@ -400,7 +420,7 @@ test("CLI rejects invalid UTF-8 without replacement or an exception trace", () =
   assert.doesNotMatch(output, /TypeError|stack|at validate-findings/i);
 });
 
-test("quotes input-derived controls in CLI validation errors", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("quotes input-derived controls in CLI validation errors", () => {
   const finding = confirmed();
   finding.trace[0].kind = `invalid-${TERMINAL_CONTROL_PAYLOAD}`;
   finding.execution[`extra-${TERMINAL_CONTROL_PAYLOAD}`] = "value";
@@ -413,7 +433,7 @@ test("quotes input-derived controls in CLI validation errors", { skip: !HAS_SAFE
   assertNoInjectedControlBytes(result.stderr);
 });
 
-test("returns a generic syntax error without parser-supplied controls", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("returns a generic syntax error without parser-supplied controls", () => {
   const malformed = Buffer.concat([
     Buffer.from("["),
     Buffer.from(TERMINAL_CONTROL_PAYLOAD),
@@ -549,7 +569,7 @@ test("caps malformed 1000-finding validation output", () => {
   assert.doesNotMatch(output, /RangeError|Maximum call stack|stack|at validate-findings/i);
 });
 
-test("caps amplified in-limit findings output under a constrained Node heap", { skip: !HAS_SAFE_INPUT_OPEN }, () => {
+test("caps amplified in-limit findings output under a constrained Node heap", () => {
   const findings = Array.from({ length: 750 }, () => ({
     verdict: "confirmed",
     trace: Array.from({ length: LIMITS.arrayItems }, () => 0),

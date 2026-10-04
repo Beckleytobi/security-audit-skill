@@ -2,7 +2,7 @@
 
 A coding-agent skill that turns your agent into a security auditor. It orchestrates isolated agents through reconnaissance, coverage-led hunting, candidate validation, structured output, independent record verification, and target-neutral reporting.
 
-This is the skill that seeded Cloudflare's vulnerability discovery harness, described in [Build your own vulnerability harness](https://blog.cloudflare.com/build-your-own-vulnerability-harness). The harness grew into a multi-stage, fleet-wide system; this skill is the single-repo starting point it evolved from.
+This repository is a fork of [Cloudflare's security-audit-skill](https://github.com/cloudflare/security-audit-skill), the single-repository starting point for the harness described in [Build your own vulnerability harness](https://blog.cloudflare.com/build-your-own-vulnerability-harness). The audit method and validators are maintained upstream. This fork currently adds clearer usage and platform guidance and automated checks; it does not claim a different detection method.
 
 ## What it does
 
@@ -51,14 +51,14 @@ Multiple runs against the same repo are additive. The skill uses prior ledgers a
 Install the skill with the [Skills CLI](https://skills.sh):
 
 ```bash
-npx skills add https://github.com/cloudflare/security-audit-skill \
+npx skills add https://github.com/Beckleytobi/security-audit-skill \
   --skill security-audit
 ```
 
 Use `--global` for a user-level installation:
 
 ```bash
-npx skills add https://github.com/cloudflare/security-audit-skill \
+npx skills add https://github.com/Beckleytobi/security-audit-skill \
   --skill security-audit \
   --global
 ```
@@ -83,11 +83,45 @@ do a security review, output to ~/audits/my-project
 
 The skill activates automatically when the request matches its trigger (security audit, find vulnerabilities, pen-test the code, etc.). A direct codebase audit or pen-test request uses full audit mode. Security questions and focused vulnerability work use guidance mode unless you request report artifacts. In full audit mode, an unspecified output directory defaults to `~/security-audit-skill/<repo-name>/run-<N>`. The workflow writes inside the target repository only when you explicitly select a directory that version control ignores.
 
+### Choose an audit size
+
+| Request | Skill behavior |
+|---|---|
+| A security question or one finding | Guidance mode: use the relevant method without creating a full audit run. |
+| A repository audit or requested report | Full audit mode: use the six phases and the `standard` profile by default. |
+| A fast first pass or a narrow subsystem | Request `quick` or name the scope; the report must say that coverage is partial. |
+| A high-stakes, multi-pass review | Request `deep`; it uses more independent review and agent calls. |
+
+For example: `Audit the authentication subsystem with the quick profile and report the coverage gaps.` The profiles change breadth and review effort, not the evidence required to confirm a finding. A full audit needs a platform that supports parallel agents and the validator and sandbox requirements below.
+
 ## Requirements
 
 - A coding agent with a model that supports tool use and parallel sub-agents
 - Node.js for the zero-dependency findings and coverage-ledger validators
 - An OS-enforced sandbox for target-controlled builds, tests, processes, browsers, emulators, fuzzers, and fixtures. It must disable external networking, use a sanitized allowlisted environment, enforce resource limits, and allow writes only to assigned scratch paths. Without these controls, the workflow keeps the lead as `needs_validation` instead of executing target code.
+- File-path input to the validator CLIs requires Node.js to expose nonzero `O_NOFOLLOW` and `O_NONBLOCK` file-opening flags. On platforms without them, including Windows with the currently bundled Node.js implementation, file-path input deliberately fails closed. Both validators also accept `-` to read bounded, strict UTF-8 JSON from standard input on every platform. The trusted parent must send the exact JSON bytes it owns directly to the validator process; do not pipe an arbitrary target-controlled file through a shell command and treat that as safe file validation. The parent must retain sole write access to saved shared records and validate the bytes it saves. This enables full-audit record validation on Windows, subject to the separate target-code sandbox requirements.
+
+## Checks
+
+The repository tests both validators on Linux and Windows in CI. On platforms without safe file-opening flags, content-validation tests use standard input and file-path input is checked for fail-closed behavior. FIFO and symlink file-path cases run only where safe file opening is available. Locally, run:
+
+```bash
+node --test skills/security-audit/validate-findings.test.cjs skills/security-audit/validate-coverage-ledger.test.cjs
+```
+
+These tests check validator behavior; they do not measure vulnerability detection quality. Comparative audit runs against known vulnerable and clean repositories remain future work.
+
+## Local checks and evaluation
+
+For a bounded local check, `skills/security-audit/scripts/run-local-check.py` provides a Linux-container runner. It requires a running local Docker engine with seccomp enabled and a toolchain image that is already present. It mounts the target read-only, uses an offline container with a read-only root, drops capabilities, clears the command's environment, limits CPU, memory, process count, individual file size, scratch storage, output, and wall time. It accepts an absolute executable path inside the image:
+
+```text
+python skills/security-audit/scripts/run-local-check.py --target <source-directory> --image <local-image> -- /absolute/path/to/tool <arguments>
+```
+
+The default runner keeps scratch data ephemeral and returns a bounded JSON observation. To retain one declared non-secret scratch file, add `--artifact <filename> --artifact-dir <new-directory>` before `--`. The destination must be a new directory outside the target; the file is limited to 1 MiB. In this mode the already-local image needs `/usr/bin/python3`. A separate trusted container promotes the file only after the target container exits, using no-follow directory descriptors; symlinks and hard links are rejected. If promotion fails and the file is decisive, keep the lead as `needs_validation`. The runner has been smoke-tested against a local Docker Desktop Linux engine for read-only target access, scratch writes, environment clearing, resource limits, timeout, output capping, and Windows-host artifact promotion. Your host and chosen image still need their own preflight.
+
+The [evaluation starter](evaluation/README.md) supplies paired vulnerable and protected fixtures, an adjudication protocol, and a scorer. It is a smoke test; no effectiveness score is claimed until actual audit runs are recorded.
 
 ## Design principles
 
@@ -95,11 +129,7 @@ The skill activates automatically when the request matches its trigger (security
 - **Adversarial validation.** The agent that checks a finding is never the agent that found it.
 - **Severity requires impact.** Likelihood x impact, not deviation from a checklist.
 - **Defense-in-depth gaps are not vulnerabilities.** If Layer A prevents the attack, the absence of Layer B is a hardening note.
-- **Multiple runs improve coverage.** In our test runs, a single run found roughly half of the vulnerabilities that repeated runs found in total.
-
-## Contact
-
-Questions, feedback, or comparing notes on AI-driven security tooling: security-ai-research@cloudflare.com
+- **Multiple runs can improve coverage.** Preserve prior evidence and gaps so later runs can target work left open; measure the gain on your own repositories rather than assuming a fixed detection rate.
 
 ## License
 
