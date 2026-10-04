@@ -65,7 +65,7 @@ def main():
 
     name = f"security-audit-check-{uuid.uuid4().hex}"
     docker_args = [
-        "docker", "run", "--rm", "--name", name, "--pull=never",
+        "docker", "run", "--rm", "--name", name, "--pull=never", "--no-healthcheck",
         "--network=none", "--ipc=none", "--read-only", "--cap-drop=ALL",
         "--security-opt=no-new-privileges=true", "--pids-limit=64",
         "--memory=512m", "--memory-swap=512m", "--cpus=1",
